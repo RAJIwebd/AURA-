@@ -27,5 +27,12 @@
         android:text="@string/capture"
         android:layout_gravity="center"
         android:layout_marginBottom="30dp"/>
+    <ImageView
+        android:id="@+id/imageView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:contentDescription="@string/todo"
+        android:scaleType="fitCenter"
+        android:visibility="gone"/> <!-- Initially hidden -->
 
 </LinearLayout>

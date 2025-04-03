@@ -1,15 +1,16 @@
 package com.example.blind_as
 
 import android.Manifest
-import android.app.Activity
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
 import android.util.Log
 import android.widget.Button
+import android.widget.ImageView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
@@ -26,6 +27,7 @@ import java.io.InputStream
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
+
 class CameraActivity : AppCompatActivity() {
 
     private lateinit var cameraExecutor: ExecutorService
@@ -33,9 +35,8 @@ class CameraActivity : AppCompatActivity() {
     private lateinit var previewView: PreviewView
     private lateinit var captureButton: Button
     private lateinit var uploadButton: Button
+    private lateinit var imageView: ImageView
     private lateinit var onnxHelper: ONNXModelHelper
-
-    private val PICK_IMAGE_REQUEST = 1
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -44,8 +45,11 @@ class CameraActivity : AppCompatActivity() {
         previewView = findViewById(R.id.previewView)
         captureButton = findViewById(R.id.captureButton)
         uploadButton = findViewById(R.id.uploadButton)
+        imageView = findViewById(R.id.imageView)
         onnxHelper = ONNXModelHelper(this)
         cameraExecutor = Executors.newSingleThreadExecutor()
+
+
 
         if (allPermissionsGranted()) {
             startCamera()
@@ -61,6 +65,43 @@ class CameraActivity : AppCompatActivity() {
             openGallery()
         }
     }
+
+    /**
+     * ✅ Checks if the required permissions are granted
+     */
+    private fun allPermissionsGranted(): Boolean {
+        return REQUIRED_PERMISSIONS.all {
+            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+        }
+    }
+
+    /**
+     * ✅ Initializes and starts the camera using CameraX
+     */
+    private fun startCamera() {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+
+        cameraProviderFuture.addListener({
+            val cameraProvider = cameraProviderFuture.get()
+            val preview = Preview.Builder().build().also {
+                it.surfaceProvider = previewView.surfaceProvider
+            }
+
+            imageCapture = ImageCapture.Builder().build()
+            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+            try {
+                cameraProvider.unbindAll()
+                cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageCapture)
+            } catch (e: Exception) {
+                Log.e("CameraActivity", "Camera start failed", e)
+            }
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    /**
+     * ✅ Opens gallery to select an image
+     */
     private val galleryLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -79,59 +120,38 @@ class CameraActivity : AppCompatActivity() {
         galleryLauncher.launch("image/*")
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-
-        if (requestCode == PICK_IMAGE_REQUEST && resultCode == Activity.RESULT_OK) {
-            val imageUri: Uri? = data?.data
-            if (imageUri != null) {
-                try {
-                    val inputStream: InputStream? = contentResolver.openInputStream(imageUri)
-                    val bitmap = BitmapFactory.decodeStream(inputStream)
-                    processImage(bitmap)
-                } catch (e: Exception) {
-                    Log.e("CameraActivity", "Error reading image", e)
-                }
-            }
-        }
-    }
-
+    /**
+     * ✅ Processes the selected image with ONNX model
+     */
     private fun processImage(bitmap: Bitmap) {
         Log.d("CameraActivity", "📸 Image uploaded successfully, processing...")
 
         val regions = onnxHelper.runInference(bitmap)
-        Log.d("ONNX_RESULT", regions.toString())
 
         if (regions.isNotEmpty()) {
             val pixelatedBitmap = onnxHelper.pixelateRegions(bitmap, regions)
+
+
+            // Save the pixelated image
+            val photoFile = File(filesDir, "image_pixelated.jpg")
+            savePixelatedImage(pixelatedBitmap, photoFile)
+
+
+            runOnUiThread {
+                imageView.setImageBitmap(pixelatedBitmap)
+            }
             Log.d("CameraActivity", "🚩 Explicit content detected, regions: $regions")
         } else {
+            runOnUiThread {
+                imageView.setImageBitmap(bitmap)
+            }
             Log.d("CameraActivity", "✅ No explicit content detected.")
         }
     }
 
-    private fun startCamera() {
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
-        cameraProviderFuture.addListener({
-            val cameraProvider = cameraProviderFuture.get()
-            val preview = Preview.Builder().build().also {
-                it.setSurfaceProvider(previewView.surfaceProvider)
-            }
-
-            imageCapture = ImageCapture.Builder().build()
-
-            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
-            try {
-                cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageCapture)
-            } catch (e: Exception) {
-                Log.e("CameraActivity", "Camera start failed", e)
-            }
-
-        }, ContextCompat.getMainExecutor(this))
-    }
-
+    /**
+     * ✅ Captures an image using CameraX and processes it
+     */
     private fun captureImage() {
         val photoFile = File(filesDir, "image.jpg")
         val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
@@ -144,11 +164,14 @@ class CameraActivity : AppCompatActivity() {
                     val bitmap = BitmapFactory.decodeFile(photoFile.absolutePath)
                     val regions = onnxHelper.runInference(bitmap)
 
-                    if (regions.isNotEmpty()) {
-                        val pixelatedBitmap = onnxHelper.pixelateRegions(bitmap, regions)
-                        savePixelatedImage(pixelatedBitmap, photoFile)
-                    } else {
-                        Log.d("ONNX_RESULT", "No explicit content detected.")
+                    runOnUiThread {
+                        if (regions.isNotEmpty()) {
+                            val pixelatedBitmap = onnxHelper.pixelateRegions(bitmap, regions)
+                            imageView.setImageBitmap(pixelatedBitmap)
+                            savePixelatedImage(pixelatedBitmap, photoFile)
+                        } else {
+                            imageView.setImageBitmap(bitmap)
+                        }
                     }
                 }
 
@@ -159,44 +182,38 @@ class CameraActivity : AppCompatActivity() {
         )
     }
 
-    private fun savePixelatedImage(bitmap: Bitmap, photoFile: File) {
+    /**
+     * ✅ Saves the pixelated image and updates the gallery
+     */
+    private fun savePixelatedImage(bitmap: Bitmap, context: File) {
         try {
-            val outputStream = FileOutputStream(photoFile)
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
-            outputStream.close()
+            // Define the folder in Pictures
+            val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+            val appDir = File(picturesDir, "BlindAS") // Folder name: "BlindAS"
+            if (!appDir.exists()) appDir.mkdirs() // Create folder if it doesn't exist
 
-            Log.d("CameraActivity", "✅ Pixelated image saved successfully.")
-        } catch (e: Exception) {
-            Log.e("CameraActivity", "Failed to save image: ${e.message}")
-        }
-    }
+            // Generate a unique filename to avoid overwriting
+            val photoFile = File(appDir, "pixelated_${System.currentTimeMillis()}.jpg")
 
-    private fun allPermissionsGranted(): Boolean {
-        return REQUIRED_PERMISSIONS.all {
-            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
-        }
-    }
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQUEST_CODE_PERMISSIONS) {
-            if (allPermissionsGranted()) {
-                startCamera()
-            } else {
-                Log.e("CameraActivity", "Permissions not granted. Closing app.")
-                finish()
+            // Save the image
+            FileOutputStream(photoFile).use { outputStream ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
             }
+
+            // Notify the media scanner to update the Gallery
+            MediaScannerConnection.scanFile(context, arrayOf(photoFile.absolutePath), null) { _, uri ->
+                Log.d("CameraActivity", "✅ Image saved and updated in gallery: $uri")
+            }
+
+            Log.d("CameraActivity", "✅ Image successfully saved at: ${photoFile.absolutePath}")
+        } catch (e: Exception) {
+            Log.e("CameraActivity", "❌ Failed to save image: ${e.message}")
         }
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        cameraExecutor.shutdown()
-        onnxHelper.closeSession()
-    }
 
     companion object {
-        private const val REQUEST_CODE_PERMISSIONS = 10
         private val REQUIRED_PERMISSIONS = arrayOf(Manifest.permission.CAMERA)
+        private const val REQUEST_CODE_PERMISSIONS = 10
     }
 }
