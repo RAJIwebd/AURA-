@@ -1,6 +1,7 @@
 package com.example.blind_as
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -26,6 +27,9 @@ import java.io.FileOutputStream
 import java.io.InputStream
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+
+
+
 
 
 class CameraActivity : AppCompatActivity() {
@@ -133,8 +137,8 @@ class CameraActivity : AppCompatActivity() {
 
 
             // Save the pixelated image
-            val photoFile = File(filesDir, "image_pixelated.jpg")
-            savePixelatedImage(pixelatedBitmap, photoFile)
+
+            savePixelatedImage(pixelatedBitmap, this)
 
 
             runOnUiThread {
@@ -168,7 +172,7 @@ class CameraActivity : AppCompatActivity() {
                         if (regions.isNotEmpty()) {
                             val pixelatedBitmap = onnxHelper.pixelateRegions(bitmap, regions)
                             imageView.setImageBitmap(pixelatedBitmap)
-                            savePixelatedImage(pixelatedBitmap, photoFile)
+                            savePixelatedImage(pixelatedBitmap, this@CameraActivity)
                         } else {
                             imageView.setImageBitmap(bitmap)
                         }
@@ -185,7 +189,7 @@ class CameraActivity : AppCompatActivity() {
     /**
      * ✅ Saves the pixelated image and updates the gallery
      */
-    private fun savePixelatedImage(bitmap: Bitmap, context: File) {
+    private fun savePixelatedImage(bitmap: Bitmap, context: Context) {
         try {
             // Define the folder in Pictures
             val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)

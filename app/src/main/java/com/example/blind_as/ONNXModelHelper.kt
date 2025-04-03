@@ -43,6 +43,8 @@ class ONNXModelHelper(context: Context) {
         val detectedRegions = mutableListOf<Region>()
         val detectedCategories = mutableListOf<Pair<String, Float>>()
 
+
+
         // Category labels from your Python script
         val categories = arrayOf(
             "FEMALE_GENITALIA_COVERED", "FACE_FEMALE", "BUTTOCKS_EXPOSED", "FEMALE_BREAST_EXPOSED",
