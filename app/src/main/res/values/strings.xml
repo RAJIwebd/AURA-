@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">BLIND-AS</string>
+    <string name="capture">Capture</string>
+    <string name="upload_image">Upload Image</string>
+</resources>
